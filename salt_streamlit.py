@@ -3,8 +3,6 @@ from datetime import datetime
 import streamlit as st
 import pandas as pd
 from io import BytesIO
-from reportlab.lib.pagesizes import letter
-from reportlab.pdfgen import canvas
 from openpyxl import Workbook
 import os
 
