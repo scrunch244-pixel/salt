@@ -1,4 +1,4 @@
-import sqlite3
+import csv
 from datetime import datetime
 import tkinter as tk
 from tkinter import ttk, messagebox, scrolledtext, filedialog
@@ -6,12 +6,9 @@ from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
 from openpyxl import Workbook
 from PIL import Image, ImageTk
-import requests
-import json
-import csv
-import os
 
-DB_FILE = "expenses.db"
+FILE_NAME = "expenses.csv"
+CATEGORIES_FILE = "categories.txt"
 
 DEFAULT_CATEGORIES = [
     "مرتبات",
@@ -28,159 +25,27 @@ DEFAULT_CATEGORIES = [
     "مصروفات خاصة"
 ]
 
-def init_db():
-    conn = sqlite3.connect(DB_FILE)
-    c = conn.cursor()
-    c.execute('''CREATE TABLE IF NOT EXISTS categories (
-                    id INTEGER PRIMARY KEY,
-                    name TEXT UNIQUE NOT NULL
-                )''')
-    c.execute('''CREATE TABLE IF NOT EXISTS expenses (
-                    id INTEGER PRIMARY KEY,
-                    date TEXT NOT NULL,
-                    category_id INTEGER NOT NULL,
-                    amount REAL NOT NULL,
-                    notes TEXT,
-                    FOREIGN KEY (category_id) REFERENCES categories (id)
-                )''')
-    # Insert default categories if not exist
-    for cat in DEFAULT_CATEGORIES:
-        c.execute("INSERT OR IGNORE INTO categories (name) VALUES (?)", (cat,))
-    conn.commit()
-    conn.close()
-
 def load_categories():
-    conn = sqlite3.connect(DB_FILE)
-    c = conn.cursor()
-    c.execute("SELECT name FROM categories ORDER BY id")
-    categories = [row[0] for row in c.fetchall()]
-    conn.close()
-    return categories
-
-init_db()
-CATEGORIES = load_categories()
-
-def get_all_expenses():
-    conn = sqlite3.connect(DB_FILE)
-    c = conn.cursor()
-    c.execute("SELECT e.id, e.date, c.name, e.amount, e.notes FROM expenses e JOIN categories c ON e.category_id = c.id ORDER BY e.date")
-    expenses = c.fetchall()
-    conn.close()
-    return expenses
-
-def get_totals_by_category():
-    conn = sqlite3.connect(DB_FILE)
-    c = conn.cursor()
-    c.execute("SELECT c.name, SUM(e.amount) FROM expenses e JOIN categories c ON e.category_id = c.id GROUP BY c.id")
-    totals = {row[0]: row[1] for row in c.fetchall()}
-    conn.close()
-    return totals
-
-def get_monthly_totals():
-    conn = sqlite3.connect(DB_FILE)
-    c = conn.cursor()
-    c.execute("SELECT strftime('%Y-%m', e.date) as month_year, SUM(e.amount) FROM expenses e GROUP BY month_year")
-    monthly_totals = {row[0]: row[1] for row in c.fetchall()}
-    conn.close()
-    return monthly_totals
-
-def get_detailed_monthly_expenses():
-    conn = sqlite3.connect(DB_FILE)
-    c = conn.cursor()
-    c.execute("SELECT strftime('%Y-%m', e.date) as month_year, e.date, c.name, e.amount, e.notes FROM expenses e JOIN categories c ON e.category_id = c.id ORDER BY month_year, e.date")
-    expenses = c.fetchall()
-    monthly_expenses = {}
-    for row in expenses:
-        month_year = row[0]
-        if month_year not in monthly_expenses:
-            monthly_expenses[month_year] = []
-        monthly_expenses[month_year].append({
-            "التاريخ": row[1],
-            "القسم": row[2],
-            "المبلغ": row[3],
-            "ملاحظات": row[4]
-        })
-    conn.close()
-    return monthly_expenses
-
-def is_category_used(category_name):
-    conn = sqlite3.connect(DB_FILE)
-    c = conn.cursor()
-    c.execute("SELECT COUNT(*) FROM expenses WHERE category_id = (SELECT id FROM categories WHERE name = ?)", (category_name,))
-    count = c.fetchone()[0]
-    conn.close()
-    return count > 0
-
-def get_daily_expenses(date):
-    conn = sqlite3.connect(DB_FILE)
-    c = conn.cursor()
-    c.execute("SELECT e.date, c.name, e.amount, e.notes FROM expenses e JOIN categories c ON e.category_id = c.id WHERE e.date = ?", (date,))
-    expenses = c.fetchall()
-    conn.close()
-    return expenses
-
-def get_monthly_expenses(month_year):
-    conn = sqlite3.connect(DB_FILE)
-    c = conn.cursor()
-    c.execute("SELECT e.date, c.name, e.amount, e.notes FROM expenses e JOIN categories c ON e.category_id = c.id WHERE strftime('%Y-%m', e.date) = ?", (month_year,))
-    expenses = c.fetchall()
-    conn.close()
-    return expenses
-
-def get_visa_cash_expenses(month_year):
-    conn = sqlite3.connect(DB_FILE)
-    c = conn.cursor()
-    c.execute("SELECT e.date, c.name, e.amount, e.notes FROM expenses e JOIN categories c ON e.category_id = c.id WHERE strftime('%Y-%m', e.date) = ? AND c.name IN ('فيزا', 'كاش', 'مصروفات خاصة', 'مصروفات')", (month_year,))
-    expenses = c.fetchall()
-    conn.close()
-    return expenses
-
-def delete_expense_by_id(expense_id):
-    conn = sqlite3.connect(DB_FILE)
-    c = conn.cursor()
-    c.execute("DELETE FROM expenses WHERE id = ?", (expense_id,))
-    conn.commit()
-    conn.close()
-
-def get_category_id(category_name):
-    conn = sqlite3.connect(DB_FILE)
-    c = conn.cursor()
-    c.execute("SELECT id FROM categories WHERE name = ?", (category_name,))
-    result = c.fetchone()
-    conn.close()
-    return result[0] if result else None
+    try:
+        with open(CATEGORIES_FILE, "r", encoding="utf-8") as f:
+            return [line.strip() for line in f if line.strip()]
+    except FileNotFoundError:
+        return DEFAULT_CATEGORIES.copy()
 
 def save_categories():
-    conn = sqlite3.connect(DB_FILE)
-    c = conn.cursor()
-    for cat in CATEGORIES:
-        c.execute("INSERT OR IGNORE INTO categories (name) VALUES (?)", (cat,))
-    conn.commit()
-    conn.close()
+    with open(CATEGORIES_FILE, "w", encoding="utf-8") as f:
+        for cat in CATEGORIES:
+            f.write(cat + "\n")
 
-def migrate_from_csv():
-    if not os.path.exists("expenses.csv"):
-        return
-    conn = sqlite3.connect(DB_FILE)
-    c = conn.cursor()
-    with open("expenses.csv", "r", encoding="utf-8") as f:
-        reader = csv.reader(f)
-        next(reader)  # Skip header
-        for row in reader:
-            date, category, amount, notes = row
-            # Get or create category_id
-            c.execute("SELECT id FROM categories WHERE name = ?", (category,))
-            result = c.fetchone()
-            if result:
-                category_id = result[0]
-            else:
-                c.execute("INSERT INTO categories (name) VALUES (?)", (category,))
-                category_id = c.lastrowid
-                CATEGORIES.append(category)  # Update global list
-            # Insert expense
-            c.execute("INSERT INTO expenses (date, category_id, amount, notes) VALUES (?, ?, ?, ?)", (date, category_id, float(amount), notes))
-    conn.commit()
-    conn.close()
+CATEGORIES = load_categories()
+
+def init_file():
+    try:
+        with open(FILE_NAME, "x", newline="", encoding="utf-8") as f:
+            writer = csv.writer(f)
+            writer.writerow(["التاريخ", "القسم", "المبلغ", "ملاحظات"])
+    except FileExistsError:
+        pass
 
 def add_expense():
     print("\nاختر القسم:")
@@ -256,12 +121,9 @@ def add_expense_gui(root):
                 messagebox.showerror("خطأ", "التاريخ يجب أن يكون بالصيغة YYYY-MM-DD")
                 return
 
-            category_id = get_category_id(category)
-            conn = sqlite3.connect(DB_FILE)
-            c = conn.cursor()
-            c.execute("INSERT INTO expenses (date, category_id, amount, notes) VALUES (?, ?, ?, ?)", (date_str, category_id, amount, notes))
-            conn.commit()
-            conn.close()
+            with open(FILE_NAME, "a", newline="", encoding="utf-8") as f:
+                writer = csv.writer(f)
+                writer.writerow([date_str, category, amount, notes])
 
             messagebox.showinfo("نجح", "تم إضافة المصروف بنجاح")
             add_window.destroy()
@@ -300,42 +162,67 @@ def show_expenses_gui(root):
             return
         item = tree.item(selected_item)
         values = item['values']
-        confirm = messagebox.askyesno("تأكيد", f"هل تريد حذف المصروف: {values[1]} - {values[2]} - {values[3]} - {values[4]}؟")
+        if values[0] == "التاريخ":  # Header
+            return
+        confirm = messagebox.askyesno("تأكيد", f"هل تريد حذف المصروف: {values[0]} - {values[1]} - {values[2]} - {values[3]}؟")
         if not confirm:
             return
-        delete_expense_by_id(values[0])
+        # Read all expenses
+        expenses = []
+        try:
+            with open(FILE_NAME, "r", encoding="utf-8") as f:
+                reader = csv.reader(f)
+                header = next(reader)
+                expenses.append(header)
+                for row in reader:
+                    if row != list(values):
+                        expenses.append(row)
+        except FileNotFoundError:
+            pass
+        # Write back without the deleted expense
+        with open(FILE_NAME, "w", newline="", encoding="utf-8") as f:
+            writer = csv.writer(f)
+            writer.writerows(expenses)
         # Refresh the tree
         tree.delete(*tree.get_children())
-        expenses = get_all_expenses()
-        for expense in expenses:
+        for expense in expenses[1:]:
             tree.insert("", tk.END, values=expense)
         messagebox.showinfo("نجح", "تم حذف المصروف بنجاح")
-
-    def refresh_tree():
-        tree.delete(*tree.get_children())
-        expenses = get_all_expenses()
-        for expense in expenses:
-            tree.insert("", tk.END, values=expense)
 
     show_window = tk.Toplevel(root)
     show_window.title("عرض كل المصروفات")
 
-    tree = ttk.Treeview(show_window, columns=("id", "التاريخ", "القسم", "المبلغ", "ملاحظات"), show="headings", displaycolumns=(1,2,3,4))
-    tree.heading("id", text="ID")
+    tree = ttk.Treeview(show_window, columns=("التاريخ", "القسم", "المبلغ", "ملاحظات"), show="headings")
     tree.heading("التاريخ", text="التاريخ")
     tree.heading("القسم", text="القسم")
     tree.heading("المبلغ", text="المبلغ")
     tree.heading("ملاحظات", text="ملاحظات")
     tree.pack(fill=tk.BOTH, expand=True)
 
-    refresh_tree()
+    try:
+        with open(FILE_NAME, "r", encoding="utf-8") as f:
+            reader = csv.reader(f)
+            header = next(reader)
+            for row in reader:
+                tree.insert("", tk.END, values=row)
+    except FileNotFoundError:
+        pass
 
     button_frame = tk.Frame(show_window)
     button_frame.pack(pady=10)
     tk.Button(button_frame, text="حذف المصروف المحدد", command=delete_expense).pack()
 
 def total_by_category_gui(root):
-    totals = get_totals_by_category()
+    from collections import defaultdict
+    totals = defaultdict(float)
+
+    try:
+        with open(FILE_NAME, "r", encoding="utf-8") as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                totals[row["القسم"]] += float(row["المبلغ"])
+    except FileNotFoundError:
+        pass
 
     total_window = tk.Toplevel(root)
     total_window.title("إجمالي المصروفات حسب القسم")
@@ -358,7 +245,20 @@ def total_by_category_gui(root):
                 text.insert(tk.END, f"{cat}: {total:.2f} جنيه\n")
 
 def monthly_reports_gui(root):
-    monthly_totals = get_monthly_totals()
+    monthly_totals = {}
+
+    try:
+        with open(FILE_NAME, "r", encoding="utf-8") as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                date = row["التاريخ"]
+                month_year = date[:7]  # YYYY-MM
+                amount = float(row["المبلغ"])
+                if month_year not in monthly_totals:
+                    monthly_totals[month_year] = 0
+                monthly_totals[month_year] += amount
+    except FileNotFoundError:
+        pass
 
     def search():
         year = year_entry.get().strip()
@@ -466,7 +366,19 @@ def monthly_reports_gui(root):
     show_all()
 
 def detailed_monthly_reports_gui(root):
-    monthly_expenses = get_detailed_monthly_expenses()
+    monthly_expenses = {}
+
+    try:
+        with open(FILE_NAME, "r", encoding="utf-8") as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                date = row["التاريخ"]
+                month_year = date[:7]  # YYYY-MM
+                if month_year not in monthly_expenses:
+                    monthly_expenses[month_year] = []
+                monthly_expenses[month_year].append(row)
+    except FileNotFoundError:
+        pass
 
     def export_pdf():
         file_path = filedialog.asksaveasfilename(defaultextension=".pdf", filetypes=[("PDF files", "*.pdf")])
@@ -564,9 +476,15 @@ def add_category_gui(root):
             messagebox.showerror("خطأ", "لا يمكن حذف الأقسام الافتراضية")
             return
         # Check if category is used in expenses
-        if is_category_used(cat_to_delete):
-            messagebox.showerror("خطأ", "لا يمكن حذف القسم لأنه مستخدم في مصروفات")
-            return
+        try:
+            with open(FILE_NAME, "r", encoding="utf-8") as f:
+                reader = csv.DictReader(f)
+                for row in reader:
+                    if row["القسم"] == cat_to_delete:
+                        messagebox.showerror("خطأ", "لا يمكن حذف القسم لأنه مستخدم في مصروفات")
+                        return
+        except FileNotFoundError:
+            pass
         # Remove from CATEGORIES
         CATEGORIES.remove(cat_to_delete)
         save_categories()
@@ -625,19 +543,14 @@ def reports_and_closure_gui(root):
                 messagebox.showerror("خطأ", "المبالغ يجب أن تكون موجبة أو صفر")
                 return
 
-            conn = sqlite3.connect(DB_FILE)
-            c = conn.cursor()
-            if visa_amount > 0:
-                visa_id = get_category_id("فيزا")
-                c.execute("INSERT INTO expenses (date, category_id, amount, notes) VALUES (?, ?, ?, ?)", (date_str, visa_id, visa_amount, notes))
-            if cash_amount > 0:
-                cash_id = get_category_id("كاش")
-                c.execute("INSERT INTO expenses (date, category_id, amount, notes) VALUES (?, ?, ?, ?)", (date_str, cash_id, cash_amount, notes))
-            if expenses_amount > 0:
-                expenses_id = get_category_id("مصروفات")
-                c.execute("INSERT INTO expenses (date, category_id, amount, notes) VALUES (?, ?, ?, ?)", (date_str, expenses_id, expenses_amount, notes))
-            conn.commit()
-            conn.close()
+            with open(FILE_NAME, "a", newline="", encoding="utf-8") as f:
+                writer = csv.writer(f)
+                if visa_amount > 0:
+                    writer.writerow([date_str, "فيزا", visa_amount, notes])
+                if cash_amount > 0:
+                    writer.writerow([date_str, "كاش", cash_amount, notes])
+                if expenses_amount > 0:
+                    writer.writerow([date_str, "مصروفات", expenses_amount, notes])
 
             messagebox.showinfo("نجح", "تم حفظ الإدخال بنجاح")
             # Clear fields for new entry
@@ -1029,8 +942,7 @@ def reports_and_closure_gui(root):
 
 
 def main():
-    init_db()
-    migrate_from_csv()
+    init_file()
 
     root = tk.Tk()
     root.title("إدارة المصروفات Salt&Crunch ")
