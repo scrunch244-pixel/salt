@@ -2,8 +2,6 @@ import sqlite3
 from datetime import datetime
 import streamlit as st
 import pandas as pd
-from io import BytesIO
-from openpyxl import Workbook
 import os
 
 DB_FILE = "expenses.db"
@@ -226,12 +224,6 @@ def monthly_reports_streamlit():
     if monthly_totals:
         df = pd.DataFrame(list(monthly_totals.items()), columns=["الشهر", "المجموع"])
         st.dataframe(df)
-        # Export to Excel
-        buffer = BytesIO()
-        with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
-            df.to_excel(writer, index=False, sheet_name='تقارير شهرية')
-        buffer.seek(0)
-        st.download_button(label="تصدير إلى Excel", data=buffer, file_name="monthly_reports.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
     else:
         st.write("لا توجد مصروفات بعد")
 
@@ -245,12 +237,6 @@ def detailed_monthly_reports_streamlit():
             st.dataframe(df)
             total = sum(float(exp['المبلغ']) for exp in expenses)
             st.write(f"الإجمالي: {total:.2f} جنيه")
-            # Export to Excel
-            buffer = BytesIO()
-            with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
-                df.to_excel(writer, index=False, sheet_name=f'تقرير {month}')
-            buffer.seek(0)
-            st.download_button(label=f"تصدير {month} إلى Excel", data=buffer, file_name=f"detailed_report_{month}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
     else:
         st.write("لا توجد مصروفات بعد")
 
