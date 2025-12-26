@@ -294,10 +294,39 @@ def daily_closure_streamlit():
         st.success("تم حفظ الإدخال بنجاح")
         st.rerun()
 
+def visa_cash_monthly_reports_streamlit():
+    st.header("تقارير فيزا وكاش شهرية")
+    monthly_expenses = get_detailed_monthly_expenses()
+    if monthly_expenses:
+        for month, expenses in monthly_expenses.items():
+            visa_cash_expenses = [exp for exp in expenses if exp['القسم'] in ['فيزا', 'كاش', 'مصروفات خاصة', 'مصروفات']]
+            if visa_cash_expenses:
+                st.subheader(f"الشهر: {month}")
+                df = pd.DataFrame(visa_cash_expenses)
+                st.dataframe(df)
+                total = sum(float(exp['المبلغ']) for exp in visa_cash_expenses)
+                st.write(f"الإجمالي: {total:.2f} جنيه")
+    else:
+        st.write("لا توجد مصروفات بعد")
+
+def daily_reports_streamlit():
+    st.header("تقرير يومي")
+    today = datetime.now().strftime("%Y-%m-%d")
+    date = st.date_input("اختر التاريخ", value=datetime.now().date())
+    if st.button("عرض التقرير"):
+        daily_expenses = get_daily_expenses(date.strftime("%Y-%m-%d"))
+        if daily_expenses:
+            df = pd.DataFrame(daily_expenses, columns=["التاريخ", "القسم", "المبلغ", "ملاحظات"])
+            st.dataframe(df)
+            total = sum(float(exp[2]) for exp in daily_expenses)
+            st.write(f"الإجمالي: {total:.2f} جنيه")
+        else:
+            st.write(f"لا توجد مصروفات لليوم {date.strftime('%Y-%m-%d')}")
+
 def main():
     st.title("إدارة المصروفات Salt&Crunch")
     st.sidebar.title("القائمة")
-    page = st.sidebar.selectbox("اختر الصفحة", ["إضافة مصروف", "عرض كل المصروفات", "إجمالي المصروفات حسب القسم", "تقارير شهرية", "تقارير شهرية مفصلة", "إضافة قسم", "إغلاق اليوم"])
+    page = st.sidebar.selectbox("اختر الصفحة", ["إضافة مصروف", "عرض كل المصروفات", "إجمالي المصروفات حسب القسم", "تقارير شهرية", "تقارير شهرية مفصلة", "تقارير فيزا وكاش شهرية", "إضافة قسم", "إغلاق اليوم"])
     if page == "إضافة مصروف":
         add_expense_streamlit()
     elif page == "عرض كل المصروفات":
@@ -308,6 +337,8 @@ def main():
         monthly_reports_streamlit()
     elif page == "تقارير شهرية مفصلة":
         detailed_monthly_reports_streamlit()
+    elif page == "تقارير فيزا وكاش شهرية":
+        visa_cash_monthly_reports_streamlit()
     elif page == "إضافة قسم":
         add_category_streamlit()
     elif page == "إغلاق اليوم":
